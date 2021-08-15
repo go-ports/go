@@ -11,3 +11,5 @@ part of that page.
 ## Reporting a Vulnerability
 
 See https://golang.org/security for how to report a vulnerability.
+
+(go-ports specific remark: Because of the time pressure and restricted visibility of security reports, please make extra clear in your communications if you are talking about a vulnerability that appears to be an issue in go-ports. Please always test first in upstream go, and if you can't or won't do so, realize that you may encounter annoyance rather than the normal gratitude for your report.)
