@@ -21,6 +21,7 @@ While we do not require that a port pass all tests, there are some rules:
 * ports that do not "just build" will be placed on a branch
 * a port unique to go-ports must have a maintainer listed in the MAINTAINERS file
 * ports that lose maintainers will be placed on a branch
+* our main branch is called 'main'
 
 Unless otherwise noted, the Go source files are distributed under the
 BSD-style license found in the LICENSE file.
@@ -33,6 +34,10 @@ Go is the work of thousands of contributors. We appreciate your help!
 
 go-ports uses standard github PR workflows; in this it differs from upstream.
 That said, to ensure easy code movement, we require that you sign the Go CLA.
+
+Lest there be any question, the Go team supports this project:
+"Thanks for setting up go-ports/go. That seems like a great place to coordinate."
+https://github.com/golang/go/issues/46802
 
 [rf]: https://reneefrench.blogspot.com/
 [cc3-by]: https://creativecommons.org/licenses/by/3.0/
