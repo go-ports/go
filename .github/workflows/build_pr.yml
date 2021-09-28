@@ -1,0 +1,16 @@
+name: Build Go compiler
+on: [pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+    steps:
+    - uses: actions/checkout@v2
+    - name: Compile Go with make.bash
+      run: |
+        cd src ; ./make.bash
+    - name: Compile Go with all.bash
+      run: |
+        cd src ; ./clean.bash ; ./all.bash
