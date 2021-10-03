@@ -50,7 +50,7 @@ TEXT runtime·set_vbar(SB), NOSPLIT, $0-4
 TEXT runtime·set_ttbr0(SB), NOSPLIT, $0-4
 	MOVW	addr+0(FP), R0
 
-	B runtime·invallpages(SB)
+	BL runtime·invallpages(SB)
 
 	// Set TTBR0
 	MCR	15, 0, R0, C2, C0, 0
@@ -97,11 +97,11 @@ TEXT runtime·rt0_arm_tamago(SB),NOSPLIT|NOFRAME,$0
 
 	BL	runtime·emptyfunc(SB)	// fault if stack check is wrong
 	BL	runtime·hwinit(SB)
+	BL	runtime·mmuinit(SB)
 	BL	runtime·check(SB)
 	BL	runtime·checkgoarm(SB)
 	BL	runtime·osinit(SB)
 	BL	runtime·vecinit(SB)
-	BL	runtime·mmuinit(SB)
 	BL	runtime·excstackinit(SB)
 	BL	runtime·schedinit(SB)
 
