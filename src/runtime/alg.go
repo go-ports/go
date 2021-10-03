@@ -321,7 +321,7 @@ func alginit() {
 		initAlgAES()
 		return
 	}
-	getRandomData((*[len(hashkey) * sys.PtrSize]byte)(unsafe.Pointer(&hashkey))[:])
+	getRandomData((*[len(hashkey) * goarch.PtrSize]byte)(unsafe.Pointer(&hashkey))[:])
 	hashkey[0] |= 1 // make sure these numbers are odd
 	hashkey[1] |= 1
 	hashkey[2] |= 1
