@@ -323,6 +323,9 @@ const (
 	minLegalPointer uintptr = 4096
 )
 
+// Used by GOOS=tamago, initialized in external board package.
+var ramSize uint32
+
 // physPageSize is the size in bytes of the OS's physical pages.
 // Mapping and unmapping operations must be done at multiples of
 // physPageSize.
@@ -565,8 +568,16 @@ func mallocinit() {
 		//
 		// 3. We try to stake out a reasonably large initial
 		// heap reservation.
+		var heapArenaCount uintptr = (1 << arenaBits)
 
-		const arenaMetaSize = (1 << arenaBits) * unsafe.Sizeof(heapArena{})
+		// On TamaGo each memory allocation directly consumes physical
+		// memory. To keep heapArenas size as low as possible we
+		// allocate the exact number needed to fill available RAM.
+		if sys.GoosTamago == 1 {
+			heapArenaCount = uintptr(ramSize)/heapArenaBytes
+		}
+
+		arenaMetaSize := heapArenaCount * unsafe.Sizeof(heapArena{})
 		meta := uintptr(sysReserve(nil, arenaMetaSize))
 		if meta != 0 {
 			mheap_.heapArenaAlloc.init(meta, arenaMetaSize, true)
