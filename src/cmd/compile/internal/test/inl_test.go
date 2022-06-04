@@ -65,6 +65,7 @@ func TestIntendedInlining(t *testing.T) {
 			"(*bmap).keys",
 			"(*bmap).overflow",
 			"(*waitq).enqueue",
+			"funcInfo.entry",
 
 			// GC-related ones
 			"cgoInRange",
@@ -122,9 +123,14 @@ func TestIntendedInlining(t *testing.T) {
 			"FullRune",
 			"FullRuneInString",
 			"RuneLen",
+			"AppendRune",
 			"ValidRune",
 		},
 		"reflect": {
+			"Value.CanInt",
+			"Value.CanUint",
+			"Value.CanFloat",
+			"Value.CanComplex",
 			"Value.CanAddr",
 			"Value.CanSet",
 			"Value.CanInterface",

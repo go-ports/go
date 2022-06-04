@@ -21,7 +21,7 @@ func isNamed(typ Type) bool {
 func isGeneric(typ Type) bool {
 	// A parameterized type is only instantiated if it doesn't have an instantiation already.
 	named, _ := typ.(*Named)
-	return named != nil && named.obj != nil && named.targs == nil && named.TParams() != nil
+	return named != nil && named.obj != nil && named.targs == nil && named.TypeParams() != nil
 }
 
 func is(typ Type, what BasicInfo) bool {
@@ -220,9 +220,16 @@ func identical(x, y Type, cmpTags bool, p *ifacePair) bool {
 		// parameter names.
 		if y, ok := y.(*Signature); ok {
 			return x.variadic == y.variadic &&
-				identicalTParams(x.TParams().list(), y.TParams().list(), cmpTags, p) &&
+				identicalTParams(x.TypeParams().list(), y.TypeParams().list(), cmpTags, p) &&
 				identical(x.params, y.params, cmpTags, p) &&
 				identical(x.results, y.results, cmpTags, p)
+		}
+
+	case *Union:
+		if y, _ := y.(*Union); y != nil {
+			xset := computeUnionTypeSet(nil, nopos, x)
+			yset := computeUnionTypeSet(nil, nopos, y)
+			return xset.terms.equal(yset.terms)
 		}
 
 	case *Interface:
@@ -302,8 +309,27 @@ func identical(x, y Type, cmpTags bool, p *ifacePair) bool {
 		// Two named types are identical if their type names originate
 		// in the same type declaration.
 		if y, ok := y.(*Named); ok {
-			x.expand()
-			y.expand()
+			xargs := x.TypeArgs().list()
+			yargs := y.TypeArgs().list()
+
+			if len(xargs) != len(yargs) {
+				return false
+			}
+
+			if len(xargs) > 0 {
+				// Instances are identical if their original type and type arguments
+				// are identical.
+				if !Identical(x.orig, y.orig) {
+					return false
+				}
+				for i, xa := range xargs {
+					if !Identical(xa, yargs[i]) {
+						return false
+					}
+				}
+				return true
+			}
+
 			// TODO(gri) Why is x == y not sufficient? And if it is,
 			//           we can just return false here because x == y
 			//           is caught in the very beginning of this function.
@@ -327,13 +353,13 @@ func identical(x, y Type, cmpTags bool, p *ifacePair) bool {
 	return false
 }
 
-func identicalTParams(x, y []*TypeName, cmpTags bool, p *ifacePair) bool {
+func identicalTParams(x, y []*TypeParam, cmpTags bool, p *ifacePair) bool {
 	if len(x) != len(y) {
 		return false
 	}
 	for i, x := range x {
 		y := y[i]
-		if !identical(x.typ.(*TypeParam).bound, y.typ.(*TypeParam).bound, cmpTags, p) {
+		if !identical(x.bound, y.bound, cmpTags, p) {
 			return false
 		}
 	}

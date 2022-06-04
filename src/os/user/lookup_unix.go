@@ -18,14 +18,7 @@ import (
 	"strings"
 )
 
-const groupFile = "/etc/group"
 const userFile = "/etc/passwd"
-
-var colon = []byte{':'}
-
-func init() {
-	groupImplemented = false
-}
 
 // lineFunc returns a value, an error, or (nil, nil) to skip the row.
 type lineFunc func(line []byte) (v interface{}, err error)

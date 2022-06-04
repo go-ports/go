@@ -36,8 +36,8 @@ import (
 	"cmd/go/internal/modload"
 	"cmd/go/internal/par"
 	"cmd/go/internal/search"
-	"cmd/go/internal/str"
 	"cmd/go/internal/trace"
+	"cmd/internal/str"
 	"cmd/internal/sys"
 
 	"golang.org/x/mod/modfile"
@@ -203,6 +203,7 @@ type PackageInternal struct {
 	Local             bool                 // imported via local path (./ or ../)
 	LocalPrefix       string               // interpret ./ and ../ imports relative to this prefix
 	ExeName           string               // desired name for temporary executable
+	FuzzInstrument    bool                 // package should be instrumented for fuzzing
 	CoverMode         string               // preprocess Go source files with the coverage tool in this mode
 	CoverVars         map[string]*CoverVar // variables created by coverage analysis
 	OmitDebug         bool                 // tell linker not to write debug information
@@ -1450,9 +1451,9 @@ func disallowInternal(ctx context.Context, srcDir string, importer *Package, imp
 			// The importer is a list of command-line files.
 			// Pretend that the import path is the import path of the
 			// directory containing them.
-			// If the directory is outside the main module, this will resolve to ".",
+			// If the directory is outside the main modules, this will resolve to ".",
 			// which is not a prefix of any valid module.
-			importerPath = modload.DirImportPath(ctx, importer.Dir)
+			importerPath, _ = modload.MainModules.DirImportPath(ctx, importer.Dir)
 		}
 		parentOfInternal := p.ImportPath[:i]
 		if str.HasPathPrefix(importerPath, parentOfInternal) {
@@ -2447,7 +2448,8 @@ func PackagesAndErrors(ctx context.Context, opts PackageOpts, patterns []string)
 		}
 		matches, _ = modload.LoadPackages(ctx, modOpts, patterns...)
 	} else {
-		matches = search.ImportPaths(patterns)
+		noModRoots := []string{}
+		matches = search.ImportPaths(patterns, noModRoots)
 	}
 
 	var (
@@ -2673,10 +2675,7 @@ func GoFilesPackage(ctx context.Context, opts PackageOpts, gofiles []string) *Pa
 		if fi.IsDir() {
 			base.Fatalf("%s is a directory, should be a Go file", file)
 		}
-		dir1, _ := filepath.Split(file)
-		if dir1 == "" {
-			dir1 = "./"
-		}
+		dir1 := filepath.Dir(file)
 		if dir == "" {
 			dir = dir1
 		} else if dir != dir1 {

@@ -525,6 +525,8 @@ func (ctxt *Link) symtab(pcln *pclntab) []sym.SymKind {
 	// within a type they sort by size, so the .* symbols
 	// just defined above will be first.
 	// hide the specific symbols.
+	// Some of these symbol section conditions are duplicated
+	// in cmd/internal/obj.contentHashSection.
 	nsym := loader.Sym(ldr.NSym())
 	symGroupType := make([]sym.SymKind, nsym)
 	for s := loader.Sym(1); s < nsym; s++ {
@@ -535,33 +537,16 @@ func (ctxt *Link) symtab(pcln *pclntab) []sym.SymKind {
 			continue
 		}
 
+		align := int32(1)
 		name := ldr.SymName(s)
 		switch {
-		case strings.HasPrefix(name, "type."):
-			if !ctxt.DynlinkingGo() {
-				ldr.SetAttrNotInSymbolTable(s, true)
-			}
-			if ctxt.UseRelro() {
-				symGroupType[s] = sym.STYPERELRO
-				if symtyperel != 0 {
-					ldr.SetCarrierSym(s, symtyperel)
-				}
-			} else {
-				symGroupType[s] = sym.STYPE
-				if symtyperel != 0 {
-					ldr.SetCarrierSym(s, symtype)
-				}
-			}
-
-		case strings.HasPrefix(name, "go.importpath.") && ctxt.UseRelro():
-			// Keep go.importpath symbols in the same section as types and
-			// names, as they can be referred to by a section offset.
-			symGroupType[s] = sym.STYPERELRO
-
 		case strings.HasPrefix(name, "go.string."):
 			symGroupType[s] = sym.SGOSTRING
 			ldr.SetAttrNotInSymbolTable(s, true)
 			ldr.SetCarrierSym(s, symgostring)
+			if ldr.SymAlign(s) == 0 {
+				ldr.SetSymAlign(s, 1) // String data is just bytes, no padding.
+			}
 
 		case strings.HasPrefix(name, "runtime.gcbits."):
 			symGroupType[s] = sym.SGCBITS
@@ -585,20 +570,45 @@ func (ctxt *Link) symtab(pcln *pclntab) []sym.SymKind {
 		case strings.HasPrefix(name, "gcargs."),
 			strings.HasPrefix(name, "gclocals."),
 			strings.HasPrefix(name, "gclocals·"),
-			ldr.SymType(s) == sym.SGOFUNC && s != symgofunc,
-			strings.HasSuffix(name, ".opendefer"),
+			ldr.SymType(s) == sym.SGOFUNC && s != symgofunc: // inltree, see pcln.go
+			// GC stack maps and inltrees have 32-bit fields.
+			align = 4
+			fallthrough
+		case strings.HasSuffix(name, ".opendefer"),
 			strings.HasSuffix(name, ".arginfo0"),
 			strings.HasSuffix(name, ".arginfo1"):
+			// These are just bytes, or varints, use align 1 (set before the switch).
 			symGroupType[s] = sym.SGOFUNC
 			ldr.SetAttrNotInSymbolTable(s, true)
 			ldr.SetCarrierSym(s, symgofunc)
-			align := int32(4)
 			if a := ldr.SymAlign(s); a < align {
 				ldr.SetSymAlign(s, align)
 			} else {
 				align = a
 			}
 			liveness += (ldr.SymSize(s) + int64(align) - 1) &^ (int64(align) - 1)
+
+		// Note: Check for "type." prefix after checking for .arginfo1 suffix.
+		// That way symbols like "type..eq.[2]interface {}.arginfo1" that belong
+		// in go.func.* end up there.
+		case strings.HasPrefix(name, "type."):
+			if !ctxt.DynlinkingGo() {
+				ldr.SetAttrNotInSymbolTable(s, true)
+			}
+			if ctxt.UseRelro() {
+				symGroupType[s] = sym.STYPERELRO
+				if symtyperel != 0 {
+					ldr.SetCarrierSym(s, symtyperel)
+				}
+			} else {
+				symGroupType[s] = sym.STYPE
+				if symtyperel != 0 {
+					ldr.SetCarrierSym(s, symtype)
+				}
+			}
+			if (strings.HasPrefix(name, "type..namedata.") || strings.HasPrefix(name, "type..importpath.")) && ldr.SymAlign(s) == 0 {
+				ldr.SetSymAlign(s, 1) // String data is just bytes, no padding.
+			}
 		}
 	}
 

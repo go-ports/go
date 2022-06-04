@@ -19,20 +19,21 @@ type Signature struct {
 	// and store it in the Func Object) because when type-checking a function
 	// literal we call the general type checker which returns a general Type.
 	// We then unpack the *Signature and use the scope for the literal body.
-	rparams  *TypeParams // receiver type parameters from left to right, or nil
-	tparams  *TypeParams // type parameters from left to right, or nil
-	scope    *Scope      // function scope, present for package-local signatures
-	recv     *Var        // nil if not a method
-	params   *Tuple      // (incoming) parameters from left to right; or nil
-	results  *Tuple      // (outgoing) results from left to right; or nil
-	variadic bool        // true if the last parameter's type is of the form ...T (or string, for append built-in only)
+	rparams  *TypeParamList // receiver type parameters from left to right, or nil
+	tparams  *TypeParamList // type parameters from left to right, or nil
+	scope    *Scope         // function scope, present for package-local signatures
+	recv     *Var           // nil if not a method
+	params   *Tuple         // (incoming) parameters from left to right; or nil
+	results  *Tuple         // (outgoing) results from left to right; or nil
+	variadic bool           // true if the last parameter's type is of the form ...T (or string, for append built-in only)
 }
 
-// NewSignature returns a new function type for the given receiver, parameters,
-// and results, either of which may be nil. If variadic is set, the function
-// is variadic, it must have at least one parameter, and the last parameter
-// must be of unnamed slice type.
-func NewSignature(recv *Var, params, results *Tuple, variadic bool) *Signature {
+// NewSignatureType creates a new function type for the given receiver,
+// receiver type parameters, type parameters, parameters, and results. If
+// variadic is set, params must hold at least one parameter and the last
+// parameter must be of unnamed slice type. If recv is non-nil, typeParams must
+// be empty. If recvTypeParams is non-empty, recv must be non-nil.
+func NewSignatureType(recv *Var, recvTypeParams, typeParams []*TypeParam, params, results *Tuple, variadic bool) *Signature {
 	if variadic {
 		n := params.Len()
 		if n == 0 {
@@ -42,7 +43,20 @@ func NewSignature(recv *Var, params, results *Tuple, variadic bool) *Signature {
 			panic("variadic parameter must be of unnamed slice type")
 		}
 	}
-	return &Signature{recv: recv, params: params, results: results, variadic: variadic}
+	sig := &Signature{recv: recv, params: params, results: results, variadic: variadic}
+	if len(recvTypeParams) != 0 {
+		if recv == nil {
+			panic("function with receiver type parameters must have a receiver")
+		}
+		sig.rparams = bindTParams(recvTypeParams)
+	}
+	if len(typeParams) != 0 {
+		if recv != nil {
+			panic("function with type parameters cannot have a receiver")
+		}
+		sig.tparams = bindTParams(typeParams)
+	}
+	return sig
 }
 
 // Recv returns the receiver of signature s (if a method), or nil if a
@@ -53,17 +67,17 @@ func NewSignature(recv *Var, params, results *Tuple, variadic bool) *Signature {
 // contain methods whose receiver type is a different interface.
 func (s *Signature) Recv() *Var { return s.recv }
 
-// TParams returns the type parameters of signature s, or nil.
-func (s *Signature) TParams() *TypeParams { return s.tparams }
+// TypeParams returns the type parameters of signature s, or nil.
+func (s *Signature) TypeParams() *TypeParamList { return s.tparams }
 
-// SetTParams sets the type parameters of signature s.
-func (s *Signature) SetTParams(tparams []*TypeName) { s.tparams = bindTParams(tparams) }
+// SetTypeParams sets the type parameters of signature s.
+func (s *Signature) SetTypeParams(tparams []*TypeParam) { s.tparams = bindTParams(tparams) }
 
-// RParams returns the receiver type parameters of signature s, or nil.
-func (s *Signature) RParams() *TypeParams { return s.rparams }
+// RecvTypeParams returns the receiver type parameters of signature s, or nil.
+func (s *Signature) RecvTypeParams() *TypeParamList { return s.rparams }
 
-// SetRParams sets the receiver type params of signature s.
-func (s *Signature) SetRParams(rparams []*TypeName) { s.rparams = bindTParams(rparams) }
+// SetRecvTypeParams sets the receiver type params of signature s.
+func (s *Signature) SetRecvTypeParams(rparams []*TypeParam) { s.rparams = bindTParams(rparams) }
 
 // Params returns the parameters of signature s, or nil.
 func (s *Signature) Params() *Tuple { return s.params }
@@ -119,50 +133,45 @@ func (check *Checker) funcType(sig *Signature, recvPar *syntax.Field, tparams []
 				// blank identifiers were found => use rewritten receiver type
 				recvTyp = isubst(recvPar.Type, smap)
 			}
-			rlist := make([]*TypeName, len(rparams))
+			rlist := make([]*TypeParam, len(rparams))
 			for i, rparam := range rparams {
 				rlist[i] = check.declareTypeParam(rparam)
 			}
 			sig.rparams = bindTParams(rlist)
 			// determine receiver type to get its type parameters
 			// and the respective type parameter bounds
-			var recvTParams []*TypeName
+			var recvTParams []*TypeParam
 			if rname != nil {
 				// recv should be a Named type (otherwise an error is reported elsewhere)
 				// Also: Don't report an error via genericType since it will be reported
 				//       again when we type-check the signature.
 				// TODO(gri) maybe the receiver should be marked as invalid instead?
-				if recv := asNamed(check.genericType(rname, false)); recv != nil {
-					recvTParams = recv.TParams().list()
+				if recv, _ := check.genericType(rname, false).(*Named); recv != nil {
+					recvTParams = recv.TypeParams().list()
 				}
 			}
 			// provide type parameter bounds
 			// - only do this if we have the right number (otherwise an error is reported elsewhere)
-			if sig.RParams().Len() == len(recvTParams) {
+			if sig.RecvTypeParams().Len() == len(recvTParams) {
 				// We have a list of *TypeNames but we need a list of Types.
-				list := make([]Type, sig.RParams().Len())
-				for i, t := range sig.RParams().list() {
-					list[i] = t.typ
+				list := make([]Type, sig.RecvTypeParams().Len())
+				for i, t := range sig.RecvTypeParams().list() {
+					list[i] = t
 				}
 				smap := makeSubstMap(recvTParams, list)
-				for i, tname := range sig.RParams().list() {
-					bound := recvTParams[i].typ.(*TypeParam).bound
+				for i, tpar := range sig.RecvTypeParams().list() {
+					bound := recvTParams[i].bound
 					// bound is (possibly) parameterized in the context of the
 					// receiver type declaration. Substitute parameters for the
 					// current context.
-					// TODO(gri) should we assume now that bounds always exist?
-					//           (no bound == empty interface)
-					if bound != nil {
-						bound = check.subst(tname.pos, bound, smap)
-						tname.typ.(*TypeParam).bound = bound
-					}
+					tpar.bound = check.subst(tpar.obj.pos, bound, smap, nil)
 				}
 			}
 		}
 	}
 
 	if tparams != nil {
-		sig.tparams = check.collectTypeParams(tparams)
+		check.collectTypeParams(&sig.tparams, tparams)
 		// Always type-check method type parameters but complain if they are not enabled.
 		// (A separate check is needed when type-checking interface method signatures because
 		// they don't have a receiver specification.)
@@ -215,7 +224,13 @@ func (check *Checker) funcType(sig *Signature, recvPar *syntax.Field, tparams []
 			var err string
 			switch T := rtyp.(type) {
 			case *Named:
-				T.expand()
+				T.resolve(check.conf.Context)
+				// The receiver type may be an instantiated type referred to
+				// by an alias (which cannot have receiver parameters for now).
+				if T.TypeArgs() != nil && sig.RecvTypeParams() == nil {
+					check.errorf(recv.pos, "cannot define methods on instantiated type %s", recv.typ)
+					break
+				}
 				// spec: "The type denoted by T is called the receiver base type; it must not
 				// be a pointer or interface type and it must be declared in the same package
 				// as the method."
